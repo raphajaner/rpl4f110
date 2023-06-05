@@ -1,0 +1,27 @@
+maps_train:
+  [
+    'Nuerburgring',
+    'MoscowRaceway',
+    'MexicoCity',
+    'BrandsHatch',
+    'SaoPaulo',
+    'Sepang',
+    'Hockenheim',
+    'Budapest' ,
+    'Spielberg'
+  ]
+maps_test:
+  [
+    'Sakhir',
+    'Melbourne',
+    'Catalunya'
+  ]
+map_path: './f110_racetracks/'
+map_ext: '.png'
+wpt_path: './f110_racetracks/${map}/${map}_raceline.csv'
+wpt_delim: ';'
+wpt_rowskip: 3
+wpt_xind: 1
+wpt_yind: 2
+wpt_thind: 3
+wpt_vind: 5

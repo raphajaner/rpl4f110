@@ -1,0 +1,25 @@
+# Standard Config
+defaults:
+  - sim: sim
+  - maps: maps
+  - rl: rl
+  - env: env
+  - planner: planner
+  - _self_
+exp_name: 'rpl4f110'
+bench_baseline: false
+inference: false
+inference_log: 'None'
+cuda: true
+cuda_allow_tf32: true
+torch_deterministic: true
+gpu_id: 0
+async_env: true
+seed: 1
+eval_freq: 20
+eval_n_eps: 2
+log_dir: None  # dummy
+num_updates: None  # dummy
+batch_size: None  # dummy
+minibatch_size: None  # dummy
+

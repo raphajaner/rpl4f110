@@ -1,0 +1,18 @@
+total_timesteps: 10e6  # total timesteps of the experiments
+learning_rate: 3e-4  # the learning rate of the optimizer
+num_envs: 36  # the number of parallel game environments
+num_steps: 2048 # the number of steps to run in each environment per policy rollout
+anneal_lr: false  # Toggle learning rate annealing for policy and value networks
+anneal_lr_factor: 0.0 # eta_min = lr * factor
+gamma: 0.998  # the discount factor gamma
+gae_lambda: 0.95  # the lambda for the general advantage estimation
+num_minibatches: 288  # the number of mini-batches
+update_epochs: 10 # the K epochs to update the policy
+norm_adv: True  # Toggles advantages normalization
+clip_coef: 0.2  # the surrogate clipping coefficient
+clip_vloss: true  # Toggles whether to use a clipped loss for the value function, as per the paper.
+ent_coef: 0.0  # coefficient of the entropy
+vf_coef: 0.5 # 0.5  # coefficient of the value function
+max_grad_norm: 5  # 0.5  # the maximum norm for the gradient clipping
+target_kl: 0.01  #  0.01 the target KL divergence threshold
+distribution: 'TanhNormal'  # distribution to use for the actor's head -> TanhNormal is bounded [-1, 1]

@@ -1,0 +1,6 @@
+reward:
+  step: 0
+  collision: -50
+  long_vel: 0.003
+  lat_vel: -0.003
+  scaling: 1
