@@ -1,4 +1,3 @@
-import logging
 from copy import deepcopy
 import gymnasium as gym
 import numpy as np
@@ -292,10 +291,6 @@ class F110Env(gym.Env):
             }
             self.render()
 
-        logging.debug(f'\nslip_angle {obs["slip_angle"]} and yaw rate {obs["yaw_rate"]}')
-        logging.debug(f'vel_x {obs["linear_vels_x"]}, vel_y {obs["linear_vels_y"]}')
-        logging.debug(f'acc_x {obs["acc_x"]}, acc_y {obs["acc_y"]}')
-
         return obs, self.calc_reward(), done, truncated, info
 
     def _shuffle_map(self, map_name=None):
@@ -305,7 +300,7 @@ class F110Env(gym.Env):
             self.current_map_name = self.map_names[idx]
         else:
             self.current_map_name = map_name
-        logging.debug(f"new map: {self.current_map_name}")
+
         map_path = self.map_paths[self.current_map_name]
         wpt_path = self.wpt_paths[self.current_map_name]
 
@@ -390,7 +385,7 @@ class F110Env(gym.Env):
         lat_vel = np.square(self.current_obs['linear_vels_y'][0]) * config.lat_vel
         # lat_vel = lat_vel if lat_vel < np.abs(long_vel) else np.abs(long_vel)
         reward = (step + collision + long_vel + lat_vel) * config.scaling
-        logging.debug(f'step={step}, collision={collision}, long_vel={long_vel}, lat_vel={lat_vel}, reward={reward}')
+
         return reward
 
     def update_map(self, map_path, map_ext):

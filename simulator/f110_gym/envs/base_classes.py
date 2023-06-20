@@ -5,6 +5,7 @@ import numpy as np
 from f110_gym.envs.dynamic_models import vehicle_dynamics_st, pid
 from f110_gym.envs.laser_models import ScanSimulator2D, check_ttc_jit, ray_cast
 from f110_gym.envs.collision_models import get_vertices, collision_multiple
+from numba import njit, jit
 
 
 class Integrator(Enum):
@@ -44,6 +45,26 @@ class RaceCar(object):
 
         # initialization
         self.params = params
+        # Accessing params from dict is expensive, so we cache them here
+        self.mu = params['mu']
+        self.C_Sf = params['C_Sf']
+        self.C_Sr = params['C_Sr']
+        self.lf = params['lf']
+        self.lr = params['lr']
+        self.h = params['h']
+        self.m = params['m']
+        self.I = params['I']
+        self.s_min = params['s_min']
+        self.s_max = params['s_max']
+        self.sv_min = params['sv_min']
+        self.sv_max = params['sv_max']
+        self.v_switch = params['v_switch']
+        self.a_max = params['a_max']
+        self.v_min = params['v_min']
+        self.v_max = params['v_max']
+        self.length = params['length']
+        self.width = params['width']
+
         self.seed = seed
         self.is_ego = is_ego
         self.time_step = time_step
@@ -85,8 +106,8 @@ class RaceCar(object):
             self.scan_angles = np.zeros((num_beams,))
             self.side_distances = np.zeros((num_beams,))
 
-            dist_sides = params['width'] / 2.
-            dist_fr = (params['lf'] + params['lr']) / 2.
+            dist_sides = self.width / 2.
+            dist_fr = (self.lf + self.lr) / 2.
 
             for i in range(num_beams):
                 angle = -fov / 2. + i * scan_ang_incr
@@ -119,6 +140,24 @@ class RaceCar(object):
     def update_params(self, params):
         """ Updates the physical parameters of the vehicle with params."""
         self.params = params
+        self.mu = params['mu']
+        self.C_Sf = params['C_Sf']
+        self.C_Sr = params['C_Sr']
+        self.lf = params['lf']
+        self.lr = params['lr']
+        self.h = params['h']
+        self.m = params['m']
+        self.I = params['I']
+        self.s_min = params['s_min']
+        self.s_max = params['s_max']
+        self.sv_min = params['sv_min']
+        self.sv_max = params['sv_max']
+        self.v_switch = params['v_switch']
+        self.a_max = params['a_max']
+        self.v_min = params['v_min']
+        self.v_max = params['v_max']
+        self.length = params['length']
+        self.width = params['width']
 
     def set_map(self, map_path, map_ext):
         """ Sets the map for scan simulator.
@@ -162,7 +201,7 @@ class RaceCar(object):
         # loop over all opponent vehicle poses
         for opp_pose in self.opp_poses:
             # get vertices of current oppoenent
-            opp_vertices = get_vertices(opp_pose, self.params['length'], self.params['width'])
+            opp_vertices = get_vertices(opp_pose, self.length, self.width)
 
             new_scan = ray_cast(np.append(self.state[0:2], self.state[4]), new_scan, self.scan_angles, opp_vertices)
 
@@ -209,9 +248,9 @@ class RaceCar(object):
         # state is [x, y, steer_angle, vel, yaw_angle, yaw_rate, slip_angle]
 
         # steering delay
-        steer = 0.
+        # steer = 0.0
         if self.steer_buffer.shape[0] < self.steer_buffer_size:
-            steer = 0.
+            steer = 0.0
             self.steer_buffer = np.append(raw_steer, self.steer_buffer)
         else:
             steer = self.steer_buffer[-1]
@@ -219,98 +258,23 @@ class RaceCar(object):
             self.steer_buffer = np.append(raw_steer, self.steer_buffer)
 
         # steering angle velocity input to steering velocity acceleration input
-        accl, sv = pid(vel, steer, self.state[3], self.state[2], self.params['sv_max'], self.params['a_max'],
-                       self.params['v_max'], self.params['v_min'])
+        accl, sv = pid(vel, steer, self.state[3], self.state[2], self.sv_max, self.a_max,
+                       self.v_max, self.v_min)
 
         self.a_x = accl
 
         if self.integrator is Integrator.RK4:
             # RK4 integration
-            k1 = vehicle_dynamics_st(
-                self.state,
-                np.array([sv, accl]),
-                self.params['mu'],
-                self.params['C_Sf'],
-                self.params['C_Sr'],
-                self.params['lf'],
-                self.params['lr'],
-                self.params['h'],
-                self.params['m'],
-                self.params['I'],
-                self.params['s_min'],
-                self.params['s_max'],
-                self.params['sv_min'],
-                self.params['sv_max'],
-                self.params['v_switch'],
-                self.params['a_max'],
-                self.params['v_min'],
-                self.params['v_max'])
+            k1 = self._get_vehicle_dynamics_st(self.state, sv, accl)
 
             k2_state = self.state + self.time_step * (k1 / 2)
-
-            k2 = vehicle_dynamics_st(
-                k2_state,
-                np.array([sv, accl]),
-                self.params['mu'],
-                self.params['C_Sf'],
-                self.params['C_Sr'],
-                self.params['lf'],
-                self.params['lr'],
-                self.params['h'],
-                self.params['m'],
-                self.params['I'],
-                self.params['s_min'],
-                self.params['s_max'],
-                self.params['sv_min'],
-                self.params['sv_max'],
-                self.params['v_switch'],
-                self.params['a_max'],
-                self.params['v_min'],
-                self.params['v_max'])
+            k2 = self._get_vehicle_dynamics_st(k2_state, sv, accl)
 
             k3_state = self.state + self.time_step * (k2 / 2)
-
-            k3 = vehicle_dynamics_st(
-                k3_state,
-                np.array([sv, accl]),
-                self.params['mu'],
-                self.params['C_Sf'],
-                self.params['C_Sr'],
-                self.params['lf'],
-                self.params['lr'],
-                self.params['h'],
-                self.params['m'],
-                self.params['I'],
-                self.params['s_min'],
-                self.params['s_max'],
-                self.params['sv_min'],
-                self.params['sv_max'],
-                self.params['v_switch'],
-                self.params['a_max'],
-                self.params['v_min'],
-                self.params['v_max'])
+            k3 = self._get_vehicle_dynamics_st(k3_state, sv, accl)
 
             k4_state = self.state + self.time_step * k3
-
-            k4 = vehicle_dynamics_st(
-                k4_state,
-                np.array([sv, accl]),
-                self.params['mu'],
-                self.params['C_Sf'],
-                self.params['C_Sr'],
-                self.params['lf'],
-                self.params['lr'],
-                self.params['h'],
-                self.params['m'],
-                self.params['I'],
-                self.params['s_min'],
-                self.params['s_max'],
-                self.params['sv_min'],
-                self.params['sv_max'],
-                self.params['v_switch'],
-                self.params['a_max'],
-                self.params['v_min'],
-                self.params['v_max'])
+            k4 = self._get_vehicle_dynamics_st(k4_state, sv, accl)
 
             # dynamics integration
             f = (1 / 6) * (k1 + 2 * k2 + 2 * k3 + k4)
@@ -321,31 +285,13 @@ class RaceCar(object):
             # print(f'v {self.state[3]} : yaw rate {self.state[5]} : slip rate {f[6]}')
 
         elif self.integrator is Integrator.Euler:
-            f = vehicle_dynamics_st(
-                self.state,
-                np.array([sv, accl]),
-                self.params['mu'],
-                self.params['C_Sf'],
-                self.params['C_Sr'],
-                self.params['lf'],
-                self.params['lr'],
-                self.params['h'],
-                self.params['m'],
-                self.params['I'],
-                self.params['s_min'],
-                self.params['s_max'],
-                self.params['sv_min'],
-                self.params['sv_max'],
-                self.params['v_switch'],
-                self.params['a_max'],
-                self.params['v_min'],
-                self.params['v_max'])
+            f = self._get_vehicle_dynamics_st(self.state, sv, accl)
             self.state = self.state + self.time_step * f
             self.a_y = self.state[3] * (self.state[5] - f[6])
 
-        else:
-            raise SyntaxError(
-                f"Invalid Integrator Specified. Provided {self.integrator.name}. Please choose RK4 or Euler")
+        # else:
+        #     raise SyntaxError(
+        #         f"Invalid Integrator Specified. Provided {self.integrator.name}. Please choose RK4 or Euler")
 
         # bound yaw angle
         if self.state[4] > 2 * np.pi:
@@ -357,6 +303,29 @@ class RaceCar(object):
         current_scan = self.scan_simulator.scan(np.append(self.state[0:2], self.state[4]), self.scan_rng)
 
         return current_scan
+
+    def _get_vehicle_dynamics_st(self, state, sv, accl):
+        f = vehicle_dynamics_st(
+            state,
+            np.array([sv, accl]),
+            self.mu,
+            self.C_Sf,
+            self.C_Sr,
+            self.lf,
+            self.lr,
+            self.h,
+            self.m,
+            self.I,
+            self.s_min,
+            self.s_max,
+            self.sv_min,
+            self.sv_max,
+            self.v_switch,
+            self.a_max,
+            self.v_min,
+            self.v_max
+        )
+        return f
 
     def update_opp_poses(self, opp_poses):
         """ Updates the vehicle's information on other vehicles.
@@ -413,6 +382,8 @@ class Simulator(object):
         self.time_step = time_step
         self.ego_idx = ego_idx
         self.params = params
+        self.length = params['length']
+        self.width = params['width']
         self.agent_poses = np.empty((self.num_agents, 3))
         self.agents = []
         self.collisions = np.zeros((self.num_agents,))
@@ -448,7 +419,7 @@ class Simulator(object):
             # update params for all
             for agent in self.agents:
                 agent.update_params(params)
-        elif agent_idx >= 0 and agent_idx < self.num_agents:
+        elif 0 <= agent_idx < self.num_agents:
             # only update one agent's params
             self.agents[agent_idx].update_params(params)
         else:
@@ -460,7 +431,7 @@ class Simulator(object):
         all_vertices = np.empty((self.num_agents, 4, 2))  # get vertices of all agents
         for i in range(self.num_agents):
             all_vertices[i, :, :] = get_vertices(np.append(self.agents[i].state[0:2], self.agents[i].state[4]),
-                                                 self.params['length'], self.params['width'])
+                                                 self.length, self.width)
         self.collisions, self.collision_idx = collision_multiple(all_vertices)
 
     def step(self, control_inputs):
@@ -482,9 +453,6 @@ class Simulator(object):
             # update each agent's pose
             current_scan = agent.update_pose(control_inputs[i, 0], control_inputs[i, 1])
             agent_scans.append(current_scan)
-
-            logging.debug(f'agent.state {agent.state[2:4]}, control_inputs {control_inputs}')
-
             # update sim's information of agent poses
             self.agent_poses[i, :] = np.append(agent.state[0:2], agent.state[4])
 
@@ -496,9 +464,7 @@ class Simulator(object):
             opp_poses = np.concatenate((self.agent_poses[0:i, :], self.agent_poses[i + 1:, :]), axis=0)
             agent.update_opp_poses(opp_poses)
             # update each agent's current scan based on other agents
-
             agent.update_scan(agent_scans, i)
-
             # update agent collision with environment
             if agent.in_collision:
                 self.collisions[i] = 1.
