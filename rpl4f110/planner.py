@@ -1,10 +1,13 @@
 import logging
+import time
 from abc import ABC
+
+import numba
 import torch
 from copy import deepcopy
 import gymnasium as gym
 import numpy as np
-from numba import njit
+from numba import njit, prange, jit
 
 
 def render_callback(env_renderer, planner):
@@ -42,22 +45,12 @@ def nearest_point_on_trajectory(point, trajectory):
         min_dist_segment(int): the index of the segment of the trajectory that the projection is on
     """
     diffs = trajectory[1:, :] - trajectory[:-1, :]
-    l2s = diffs[:, 0] ** 2 + diffs[:, 1] ** 2
-    # this is equivalent to the elementwise dot product
-    # dots = np.sum((point - trajectory[:-1,:]) * diffs[:,:], axis=1)
-    dots = np.empty((trajectory.shape[0] - 1,))
-    for i in range(dots.shape[0]):
-        dots[i] = np.dot((point - trajectory[i, :]), diffs[i, :])
-    t = dots / l2s
-    t[t < 0.0] = 0.0
-    t[t > 1.0] = 1.0
-    # t = np.clip(dots / l2s, 0.0, 1.0)
+    # Equivalent to dot product
+    t = np.sum((point - trajectory[:-1, :]) * diffs, axis=1) / (diffs[:, 0] ** 2 + diffs[:, 1] ** 2)
+    t = np.clip(t, 0.0, 1.0)
     projections = trajectory[:-1, :] + (t * diffs.T).T
-    # dists = np.linalg.norm(point - projections, axis=1)
-    dists = np.empty((projections.shape[0],))
-    for i in range(dists.shape[0]):
-        temp = point - projections[i]
-        dists[i] = np.sqrt(np.sum(temp * temp))
+    temp = point - projections
+    dists = np.sqrt(np.sum(temp * temp, axis=1))
     min_dist_segment = np.argmin(dists)
     return projections[min_dist_segment], dists[min_dist_segment], t[min_dist_segment], min_dist_segment
 
@@ -229,7 +222,7 @@ class PurePursuitPlanner(Planner):
             current_waypoint(np.ndarray): the current waypoint
         """
         wpts = np.vstack((self.waypoints[:, self.conf.maps.wpt_xind], self.waypoints[:, self.conf.maps.wpt_yind])).T
-        nearest_point, nearest_dist, t, i = nearest_point_on_trajectory(position, wpts)
+        nearest_point, nearest_dist, t, i = nearest_point_on_trajectory(position, np.ascontiguousarray(wpts))
         if nearest_dist < lookahead_distance:
             lookahead_point, i2, t2 = first_point_on_trajectory_intersecting_circle(
                 position, lookahead_distance, wpts,
@@ -305,9 +298,9 @@ class PurePursuitPlanner(Planner):
         )
 
         if lookahead_point is None:
-            return np.zeros((n_next_points, 3))  # TODO: Will/should throw an error since lookahead point is missing
+            return np.zeros((n_next_points, 3))
 
-        logging.debug(f'lookahead_point dtype {lookahead_point.dtype}, shape {lookahead_point.shape}')
+        # logging.debug(f'lookahead_point dtype {lookahead_point.dtype}, shape {lookahead_point.shape}')
 
         speed, steering_angle = get_actuation(
             pose_theta, lookahead_point[0], position, lookahead_distance,
@@ -445,7 +438,7 @@ class PlannerEnvWrapper(GymActionObservationWrapper, ABC):
         # lookahead_points_relative = (lookahead_point[:, :2] - poses_global).flatten()
         lookahead_points_relative = (lookahead_point - poses_global).flatten()
         action_planner = np.array([steering_angle, speed])
-        logging.debug(f'action_planner {action_planner}')
+        # logging.debug(f'action_planner {action_planner}')
 
         # Make sure that planner cannot generate actions that are not in the env's action space
         action_planner = np.clip(
